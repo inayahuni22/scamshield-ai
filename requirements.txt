@@ -1,0 +1,9 @@
+python-telegram-bot==21.4
+pyzbar==0.1.9
+Pillow==10.4.0
+crewai==0.51.1
+crewai-tools==0.8.3
+litellm==1.44.0
+supabase==2.6.0
+python-dotenv==1.0.1
+requests==2.32.3
