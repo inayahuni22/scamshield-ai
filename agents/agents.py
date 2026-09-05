@@ -1,4 +1,4 @@
-"""
+﻿"""
 CrewAI agents: Verifier (decides which CAMARA checks to run) and Explainer
 (reasons over signals, writes the plain-language verdict).
 
@@ -10,7 +10,7 @@ real camara_apis module for the live demo.
 import os
 import json
 from dotenv import load_dotenv
-from crewai import Agent, Task, Crew, LLM
+from crewai import Agent, Task, Crew
 
 load_dotenv()
 
@@ -31,18 +31,8 @@ else:
         check_location,
     )
 
-groq_llm = LLM(
-    model="groq/llama-3.3-70b-versatile",
-    api_key=os.getenv("GROQ_API_KEY"),
-    temperature=0.2,
-)
-
 
 def run_verifier(input_type: str, phone_number: str | None, claimed_location: str | None) -> dict:
-    """
-    Decides which CAMARA checks matter for this input type and runs them.
-    Text/SMS -> sender identity checks. QR -> location match check.
-    """
     checks_run = []
     results = {}
 
@@ -64,57 +54,10 @@ def run_verifier(input_type: str, phone_number: str | None, claimed_location: st
 
 
 def run_explainer(signal_data: dict) -> dict:
-    """
-    Feeds the signal results to a CrewAI agent backed by Groq, gets back a
-    plain-language verdict. Falls back to a rule-based verdict if the LLM
-    call fails, so the demo never breaks on an API hiccup.
-    """
-    explainer = Agent(
-        role="Fraud Signal Explainer",
-        goal=(
-            "Read raw telecom fraud-detection signals and produce one of "
-            "exactly three verdicts: 'Safe', 'Verify First', or 'Do Not Proceed', "
-            "with a short plain-language explanation a non-technical person can "
-            "understand in 2-3 sentences."
-        ),
-        backstory=(
-            "You explain fraud risk to everyday consumers — parents, "
-            "grandparents, first-time smartphone users. No jargon, no risk "
-            "scores, just a clear verdict and why."
-        ),
-        llm=groq_llm,
-        verbose=False,
-    )
-
-    task = Task(
-        description=(
-            "Here are the raw signal results from CAMARA fraud-detection APIs:\n"
-            f"{json.dumps(signal_data, indent=2)}\n\n"
-            "Return ONLY a JSON object with exactly two keys: 'verdict' "
-            "(one of 'Safe', 'Verify First', 'Do Not Proceed') and "
-            "'explanation' (a short plain-language string). No other text."
-        ),
-        expected_output="A JSON object with 'verdict' and 'explanation' keys.",
-        agent=explainer,
-    )
-
-    crew = Crew(agents=[explainer], tasks=[task], verbose=False)
-
-    try:
-        raw = crew.kickoff()
-        text = str(raw).strip().strip("```json").strip("```").strip()
-        parsed = json.loads(text)
-        return {
-            "verdict": parsed["verdict"],
-            "explanation": parsed["explanation"],
-            "raw_signals": signal_data,
-        }
-    except Exception:
-        return _fallback_verdict(signal_data)
+    return _fallback_verdict(signal_data)
 
 
 def _fallback_verdict(signal_data: dict) -> dict:
-    """Simple rule-based backup if the LLM call fails or returns bad JSON."""
     results = signal_data.get("results", {})
     red_flags = []
 
@@ -145,12 +88,10 @@ def _fallback_verdict(signal_data: dict) -> dict:
 
 def process(input_type: str, phone_number: str | None = None,
             claimed_location: str | None = None) -> dict:
-    """Full pipeline: Verifier -> Explainer. This is what main.py calls."""
     signal_data = run_verifier(input_type, phone_number, claimed_location)
     return run_explainer(signal_data)
 
 
 if __name__ == "__main__":
-    # Standalone test using mock signals
     result = process(input_type="text", phone_number="+971500000000")
     print(json.dumps(result, indent=2))
