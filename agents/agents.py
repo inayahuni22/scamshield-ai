@@ -8,9 +8,13 @@ real camara_apis module for the live demo.
 """
 
 import os
+import sys
 import json
 from dotenv import load_dotenv
 from crewai import Agent, Task, Crew
+from langchain_groq import ChatGroq
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 load_dotenv()
 
@@ -30,6 +34,8 @@ else:
         check_device_status,
         check_location,
     )
+
+GROQ_MODEL = "openai/gpt-oss-120b"
 
 
 def run_verifier(input_type: str, phone_number: str | None, claimed_location: str | None) -> dict:
@@ -54,7 +60,50 @@ def run_verifier(input_type: str, phone_number: str | None, claimed_location: st
 
 
 def run_explainer(signal_data: dict) -> dict:
-    return _fallback_verdict(signal_data)
+    explainer = Agent(
+        role="Fraud Signal Explainer",
+        goal=(
+            "Read raw telecom fraud-detection signals and produce one of "
+            "exactly three verdicts: 'Safe', 'Verify First', or 'Do Not Proceed', "
+            "with a short plain-language explanation a non-technical person can "
+            "understand in 2-3 sentences."
+        ),
+        backstory=(
+            "You explain fraud risk to everyday consumers — parents, "
+            "grandparents, first-time smartphone users. No jargon, no risk "
+            "scores, just a clear verdict and why."
+        ),
+        llm=ChatGroq(model=GROQ_MODEL, temperature=0.2),
+        verbose=False,
+    )
+
+    task = Task(
+        description=(
+            "Here are the raw signal results from CAMARA fraud-detection APIs:\n"
+            f"{json.dumps(signal_data, indent=2)}\n\n"
+            "Return ONLY a JSON object with exactly two keys: 'verdict' "
+            "(one of 'Safe', 'Verify First', 'Do Not Proceed') and "
+            "'explanation' (a short plain-language string). No other text."
+        ),
+        expected_output="A JSON object with 'verdict' and 'explanation' keys.",
+        agent=explainer,
+    )
+
+    crew = Crew(agents=[explainer], tasks=[task], verbose=False)
+
+    try:
+        raw = crew.kickoff()
+        print(f"[DEBUG] raw kickoff result: {repr(raw)}")
+        text = str(raw).strip().strip("```json").strip("```").strip()
+        parsed = json.loads(text)
+        return {
+            "verdict": parsed["verdict"],
+            "explanation": parsed["explanation"],
+            "raw_signals": signal_data,
+        }
+    except Exception as e:
+        print(f"[DEBUG] LLM call failed: {e}")
+        return _fallback_verdict(signal_data)
 
 
 def _fallback_verdict(signal_data: dict) -> dict:
@@ -93,5 +142,5 @@ def process(input_type: str, phone_number: str | None = None,
 
 
 if __name__ == "__main__":
-    result = process(input_type="text", phone_number="+971500000000")
+    result = process(input_type="text", phone_number="+99999991000")
     print(json.dumps(result, indent=2))
