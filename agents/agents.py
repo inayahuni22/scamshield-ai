@@ -1,4 +1,4 @@
-"""
+﻿"""
 CrewAI agents: Verifier (decides which CAMARA checks to run) and Explainer
 (reasons over signals, writes the plain-language verdict).
 
@@ -39,10 +39,6 @@ GROQ_MODEL = "openai/gpt-oss-120b"
 
 
 def run_verifier(input_type: str, phone_number: str | None, claimed_location: str | None) -> dict:
-    """
-    Decides which CAMARA checks matter for this input type and runs them.
-    Text/SMS -> sender identity checks. QR -> location match check.
-    """
     checks_run = []
     results = {}
 
@@ -64,11 +60,6 @@ def run_verifier(input_type: str, phone_number: str | None, claimed_location: st
 
 
 def run_explainer(signal_data: dict) -> dict:
-    """
-    Feeds the signal results to a CrewAI agent backed by Groq, gets back a
-    plain-language verdict. Falls back to a rule-based verdict if the LLM
-    call fails, so the demo never breaks on an API hiccup.
-    """
     explainer = Agent(
         role="Fraud Signal Explainer",
         goal=(
@@ -116,7 +107,6 @@ def run_explainer(signal_data: dict) -> dict:
 
 
 def _fallback_verdict(signal_data: dict) -> dict:
-    """Simple rule-based backup if the LLM call fails or returns bad JSON."""
     results = signal_data.get("results", {})
     red_flags = []
 
@@ -147,12 +137,10 @@ def _fallback_verdict(signal_data: dict) -> dict:
 
 def process(input_type: str, phone_number: str | None = None,
             claimed_location: str | None = None) -> dict:
-    """Full pipeline: Verifier -> Explainer. This is what main.py calls."""
     signal_data = run_verifier(input_type, phone_number, claimed_location)
     return run_explainer(signal_data)
 
 
 if __name__ == "__main__":
-    # Standalone test using mock signals
     result = process(input_type="text", phone_number="+99999991000")
     print(json.dumps(result, indent=2))
