@@ -1,9 +1,8 @@
 python-telegram-bot==21.4
 pyzbar==0.1.9
 Pillow==10.4.0
-crewai==1.15.19
-crewai-tools
-litellm
+crewai==0.203.2
 supabase==2.6.0
 python-dotenv
 requests
+langchain-groq==0.1.5

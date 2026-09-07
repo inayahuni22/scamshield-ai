@@ -1,4 +1,4 @@
-"""
+﻿"""
 CrewAI agents: Verifier (decides which CAMARA checks to run) and Explainer
 (reasons over signals, writes the plain-language verdict).
 
@@ -8,9 +8,13 @@ real camara_apis module for the live demo.
 """
 
 import os
+import sys
 import json
 from dotenv import load_dotenv
-from crewai import Agent, Task, Crew, LLM
+from crewai import Agent, Task, Crew
+from langchain_groq import ChatGroq
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 load_dotenv()
 
@@ -31,18 +35,10 @@ else:
         check_location,
     )
 
-groq_llm = LLM(
-    model="groq/llama-3.3-70b-versatile",
-    api_key=os.getenv("GROQ_API_KEY"),
-    temperature=0.2,
-)
+GROQ_MODEL = "openai/gpt-oss-120b"
 
 
 def run_verifier(input_type: str, phone_number: str | None, claimed_location: str | None) -> dict:
-    """
-    Decides which CAMARA checks matter for this input type and runs them.
-    Text/SMS -> sender identity checks. QR -> location match check.
-    """
     checks_run = []
     results = {}
 
@@ -64,11 +60,6 @@ def run_verifier(input_type: str, phone_number: str | None, claimed_location: st
 
 
 def run_explainer(signal_data: dict) -> dict:
-    """
-    Feeds the signal results to a CrewAI agent backed by Groq, gets back a
-    plain-language verdict. Falls back to a rule-based verdict if the LLM
-    call fails, so the demo never breaks on an API hiccup.
-    """
     explainer = Agent(
         role="Fraud Signal Explainer",
         goal=(
@@ -82,7 +73,7 @@ def run_explainer(signal_data: dict) -> dict:
             "grandparents, first-time smartphone users. No jargon, no risk "
             "scores, just a clear verdict and why."
         ),
-        llm=groq_llm,
+        llm=ChatGroq(model=GROQ_MODEL, temperature=0.2),
         verbose=False,
     )
 
@@ -102,6 +93,7 @@ def run_explainer(signal_data: dict) -> dict:
 
     try:
         raw = crew.kickoff()
+        print(f"[DEBUG] raw kickoff result: {repr(raw)}")
         text = str(raw).strip().strip("```json").strip("```").strip()
         parsed = json.loads(text)
         return {
@@ -109,12 +101,12 @@ def run_explainer(signal_data: dict) -> dict:
             "explanation": parsed["explanation"],
             "raw_signals": signal_data,
         }
-    except Exception:
+    except Exception as e:
+        print(f"[DEBUG] LLM call failed: {e}")
         return _fallback_verdict(signal_data)
 
 
 def _fallback_verdict(signal_data: dict) -> dict:
-    """Simple rule-based backup if the LLM call fails or returns bad JSON."""
     results = signal_data.get("results", {})
     red_flags = []
 
@@ -145,12 +137,10 @@ def _fallback_verdict(signal_data: dict) -> dict:
 
 def process(input_type: str, phone_number: str | None = None,
             claimed_location: str | None = None) -> dict:
-    """Full pipeline: Verifier -> Explainer. This is what main.py calls."""
     signal_data = run_verifier(input_type, phone_number, claimed_location)
     return run_explainer(signal_data)
 
 
 if __name__ == "__main__":
-    # Standalone test using mock signals
-    result = process(input_type="text", phone_number="+971500000000")
+    result = process(input_type="text", phone_number="+99999991000")
     print(json.dumps(result, indent=2))
