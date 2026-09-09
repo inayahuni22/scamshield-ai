@@ -217,7 +217,7 @@ This provides a foundation for future analytics, monitoring, and fraud-pattern a
 | AI / Agent Framework | CrewAI                         |
 | LLM                  | Groq                           |
 | Network Intelligence | Nokia Network-as-Code / CAMARA |
-| QR Detection         | Pyzbar                         |
+|Image & QR Processing | OpenCV + Pyzbar                |
 | Database             | Supabase PostgreSQL            |
 | Environment          | Python Virtual Environment     |
 | Version Control      | Git / GitHub                   |
