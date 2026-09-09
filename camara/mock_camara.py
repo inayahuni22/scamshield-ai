@@ -1,46 +1,34 @@
-"""
-Mock CAMARA API responses.
+"""Deterministic mock CAMARA responses for ScamShield AI demos."""
 
-Same function names/signatures as camara_apis.py (the real Nokia NaC wrappers).
-Everyone else (bot, agents) imports from here until camara_apis.py is ready,
-then main.py swaps the import — no other code needs to change.
-"""
-
-import random
+RISKY_DEMO_NUMBER = "+99999991000"
 
 
 def check_sim_swap(phone_number: str) -> dict:
-    swapped = random.random() < 0.2  # 20% of test calls flag a swap
-    return {
-        "swapped": swapped,
-        "swap_date": "2026-08-30" if swapped else None,
-    }
+    risky = phone_number == RISKY_DEMO_NUMBER
+    return {"swapped": risky, "swap_date": "2026-08-30" if risky else None}
 
 
 def check_number_verification(phone_number: str) -> dict:
-    return {
-        "verified": random.random() > 0.15,
-    }
+    return {"verified": phone_number != RISKY_DEMO_NUMBER}
 
 
 def check_device_status(phone_number: str) -> dict:
-    return {
-        "active": random.random() > 0.1,
-    }
+    return {"active": phone_number != RISKY_DEMO_NUMBER}
 
 
 def check_location(phone_number: str, claimed_location: str) -> dict:
-    match = random.random() > 0.25
+    risky = phone_number == RISKY_DEMO_NUMBER
     return {
-        "match": match,
+        "match": False if risky else True,
         "claimed_location": claimed_location,
-        "actual_location": claimed_location if match else "Unknown / mismatched region",
+        "actual_location": (
+            "Unknown / mismatched region" if risky else claimed_location
+        ),
     }
 
 
 if __name__ == "__main__":
-    # quick sanity check
-    print(check_sim_swap("+971500000000"))
-    print(check_number_verification("+971500000000"))
-    print(check_device_status("+971500000000"))
-    print(check_location("+971500000000", "Dubai, UAE"))
+    print(check_sim_swap(RISKY_DEMO_NUMBER))
+    print(check_number_verification(RISKY_DEMO_NUMBER))
+    print(check_device_status(RISKY_DEMO_NUMBER))
+    print(check_location(RISKY_DEMO_NUMBER, "Dubai, UAE"))

@@ -17,14 +17,35 @@ This is a reference baseline, not a machine-learning model.
 
 SAFE_BASELINE = {
 
-    # These are safe demonstration domains.
-    # Add real trusted domains only when you have a reason
-    # to classify them as trusted.
+    # Demo domains, kept for the test suite in agents.py's __main__ block.
+    # Real, well-known domains added below so genuine safe merchant/service
+    # QR codes get recognized as explicitly trusted, not just "no risk found."
     "trusted_domains": [
         "example.com",
         "example.org",
         "example.net",
         "wikipedia.org",
+
+        # Major global payment/tech providers commonly embedded in
+        # legitimate payment QR codes.
+        "paypal.com",
+        "google.com",
+        "apple.com",
+        "microsoft.com",
+        "visa.com",
+        "mastercard.com",
+        "stripe.com",
+
+        # UAE government and major service providers (adjust/add real
+        # merchants you'll use in your actual demo QR codes).
+        "dewa.gov.ae",
+        "adnoc.ae",
+        "etisalat.ae",
+        "du.ae",
+        "emirates.com",
+        "dubaipolice.gov.ae",
+        "u.ae",
+        "uowdubai.ac.ae",
     ],
 
     # Safe QR codes normally use HTTPS.

@@ -1,5 +1,4 @@
-﻿
-"""
+﻿"""
 ScamShield AI — CrewAI analysis pipeline.
 
 Responsibilities:
@@ -56,7 +55,7 @@ load_dotenv()
 
 USE_MOCK_CAMARA = os.getenv(
     "USE_MOCK_CAMARA",
-    "true"
+    "false"
 ).lower() == "true"
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -92,92 +91,116 @@ def analyze_social_engineering(text: str) -> dict:
     lower_text = text.lower()
 
     tactics = {
-        "urgency": [
-            "immediately",
-            "urgent",
-            "urgently",
-            "right away",
-            "within 24 hours",
-            "within 2 hours",
-            "act now",
-            "last chance",
-            "expires today",
-            "deadline",
-        ],
+    "urgency": [
+        "immediately",
+        "urgent",
+        "urgently",
+        "right away",
+        "within 24 hours",
+        "within 2 hours",
+        "act now",
+        "take action",
+        "last chance",
+        "as soon as possible",
+        "today",
+        "expires today",
+        "deadline",
+    ],
 
-        "authority": [
-            "microsoft",
-            "security team",
-            "bank",
-            "police",
-            "government",
-            "administrator",
-            "it department",
-            "support team",
-            "official",
-        ],
+    "authority": [
+        "microsoft",
+        "security team",
+        "bank",
+        "police",
+        "government",
+        "administrator",
+        "it department",
+        "support team",
+        "official",
+    ],
 
-        "fear": [
-            "suspended",
-            "blocked",
-            "locked",
-            "terminated",
-            "legal action",
-            "security breach",
-            "unauthorized access",
-            "account will be closed",
-        ],
+    "fear": [
+        "suspended",
+        "blocked",
+        "locked",
+        "terminated",
+        "legal action",
+        "security breach",
+        "unauthorized access",
+        "account will be closed",
+    ],
 
-        "reward": [
-            "congratulations",
-            "winner",
-            "selected",
-            "reward",
-            "prize",
-            "gift",
-            "$500",
-            "$1000",
-            "free money",
-            "cash prize",
-        ],
+    "reward": [
+        "congratulations",
+        "winner",
+        "selected",
+        "reward",
+        "prize",
+        "gift",
+        "$500",
+        "$1000",
+        "free money",
+        "cash prize",
+    ],
 
-        "credential_harvesting": [
-            "verify your account",
-            "verify account",
-            "confirm your account",
-            "login",
-            "sign in",
-            "signin",
-            "password",
-            "one-time password",
-            "otp",
-            "credentials",
-            "enter your details",
-            "confirm your details",
-        ],
+    "credential_harvesting": [
+        "verify your account",
+        "verify account",
+        "confirm your account",
+        "login",
+        "sign in",
+        "signin",
+        "password",
+        "one-time password",
+        "otp",
+        "credentials",
+        "enter your details",
+        "confirm your details",
+    ],
 
-        "financial_pressure": [
-            "payment",
-            "pay now",
-            "transfer money",
-            "send money",
-            "bank transfer",
-            "credit card",
-            "debit card",
-            "refund",
-            "invoice",
-        ],
+    "financial_pressure": [
+        "payment",
+        "pay now",
+        "transfer money",
+        "send money",
+        "bank transfer",
+        "credit card",
+        "debit card",
+        "refund",
+        "invoice",
+    ],
 
-        "impersonation": [
-            "this is microsoft",
-            "this is your bank",
-            "this is support",
-            "i am from microsoft",
-            "i'm from microsoft",
-            "security department",
-            "account manager",
-        ],
-    }
+    "impersonation": [
+        "this is microsoft",
+        "this is your bank",
+        "this is support",
+        "i am from microsoft",
+        "i'm from microsoft",
+        "security department",
+        "account manager",
+    ],
+
+    "account_threat": [
+        "account compromised",
+        "account has been compromised",
+        "account suspended",
+        "account will be suspended",
+        "account locked",
+        "account has been locked",
+        "unauthorized access",
+        "suspicious activity",
+    ],
+
+    "credential_request": [
+        "verify your account",
+        "verify your details",
+        "confirm your account",
+        "confirm your identity",
+        "enter your login details",
+        "enter your password",
+        "enter your security code",
+    ],
+}
 
     detected = {}
     all_matches = []
@@ -187,7 +210,7 @@ def analyze_social_engineering(text: str) -> dict:
         matches = [
             keyword
             for keyword in keywords
-            if keyword in lower_text
+            if _keyword_present(keyword, lower_text)
         ]
 
         detected[tactic] = {
@@ -243,7 +266,14 @@ def _extract_domain(url: str) -> str:
 
     try:
 
-        parsed = urlparse(url)
+        # urlparse() only populates .netloc when the string has "://" —
+        # a bare "www.paypal.com/signin" (no http/https prefix) parses
+        # with an EMPTY netloc and the whole thing lands in .path, so
+        # it silently fails to match anything in the trusted-domain
+        # list. Add a scheme first when one isn't present.
+        parsed = urlparse(
+            url if "://" in url else "https://" + url
+        )
 
         domain = parsed.netloc.lower()
 
@@ -298,6 +328,87 @@ def _count_subdomains(domain: str) -> int:
         return 0
 
     return len(parts) - 2
+
+
+def _keyword_present(keyword: str, text: str) -> bool:
+    """
+    Whole-word keyword match, not substring match.
+
+    Plain "in" substring checks cause false positives — e.g. the
+    keyword "pay" matching inside "payload" or "display", or "account"
+    matching inside "accountant". \\b word-boundary regex avoids this
+    while still matching the keyword regardless of surrounding
+    punctuation or case.
+    """
+
+    return bool(
+        re.search(
+            r"\b" + re.escape(keyword.lower()) + r"\b",
+            text,
+        )
+    )
+
+
+# ============================================================
+# URL EXTRACTION (for free-text messages)
+# ============================================================
+#
+# A pasted link like "www.paypal.com/signin" or "g00gle-login.com"
+# was previously scanned as plain prose in analyze_social_engineering,
+# so words that happen to appear inside the URL itself (e.g. "signin",
+# "payment") got counted as narrative social-engineering language, and
+# the URL never got the domain-trust / brand-impersonation / baseline
+# checks that analyze_qr_content() already does correctly for QR
+# codes. This regex pulls URL-looking tokens out of the message so
+# they can be run through analyze_qr_content() instead, and removed
+# from the text before keyword scoring runs.
+
+_URL_PATTERN = re.compile(
+    r"(?:https?://|www\.)[^\s'\"<>]+"
+    r"|(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+"
+    r"[a-zA-Z]{2,}(?:/[^\s'\"<>]*)?"
+)
+
+
+def _extract_urls(text: str) -> list[str]:
+    """
+    Find URL-looking substrings in free text, e.g. embedded in a
+    Telegram message alongside a sentence.
+    """
+
+    if not text:
+        return []
+
+    candidates = _URL_PATTERN.findall(text)
+
+    cleaned = []
+
+    for candidate in candidates:
+
+        trimmed = candidate.strip().strip("'\").,;:!?")
+
+        # Require an actual dot so we don't match plain words.
+        if "." in trimmed:
+            cleaned.append(trimmed)
+
+    # De-duplicate while preserving order.
+    return list(dict.fromkeys(cleaned))
+
+
+def _strip_urls(text: str, urls: list[str]) -> str:
+    """
+    Remove already-extracted URL substrings from the text before it
+    goes through narrative keyword scoring, so words inside the URL
+    (like "signin" or "payment") aren't double-counted as if they were
+    part of the sender's sentence.
+    """
+
+    stripped = text
+
+    for url in urls:
+        stripped = stripped.replace(url, " ")
+
+    return stripped
 
 
 # ============================================================
@@ -367,7 +478,7 @@ def analyze_qr_content(qr_content: str) -> dict:
                     [],
                 )
             )
-            if keyword.lower() in lower_content
+            if _keyword_present(keyword, lower_content)
         ]
 
         high_risk_matches = [
@@ -378,7 +489,7 @@ def analyze_qr_content(qr_content: str) -> dict:
                     [],
                 )
             )
-            if keyword.lower() in lower_content
+            if _keyword_present(keyword, lower_content)
         ]
 
         all_matches = list(
@@ -533,6 +644,158 @@ def analyze_qr_content(qr_content: str) -> dict:
         )
     )
 
+    if is_trusted_domain:
+
+        return {
+            "analyzed": True,
+            "is_url": True,
+            "domain": domain,
+            "risk_score": 0,
+            "classification": "safe",
+            "matches": [],
+            "reasons": [
+                "Domain matches the trusted-domain baseline."
+            ],
+            "content": content,
+        }
+
+    # --------------------------------------------------------
+    # Brand impersonation (lookalike domain)
+    # --------------------------------------------------------
+    # A domain that contains a well-known trusted brand name (e.g.
+    # "paypal") but is NOT that brand's actual domain is a classic
+    # phishing pattern — e.g. "paypal-secure-verify.com" is not
+    # paypal.com and should never be treated as merely "suspicious".
+    # This has to run after the exact-trusted-domain check above
+    # (which already returned) and before general keyword scoring,
+    # since it's a strong signal on its own regardless of risk_score.
+
+    # Exclude generic placeholder/demo domains from the trusted list —
+    # "example" and "wikipedia" are common enough words/substrings that
+    # checking for them as "brands" produces false positives (e.g.
+    # "random-shop-example.net" contains "example" but isn't
+    # impersonating anyone). Only real, distinctive commercial/
+    # government brand names belong in impersonation matching.
+    _generic_placeholder_domains = {
+        "example.com", "example.org", "example.net", "wikipedia.org",
+    }
+
+    # --------------------------------------------------------
+    # Brand impersonation / lookalike domain detection
+    # --------------------------------------------------------
+    #
+    # Detect both:
+    #   microsoft-secure.com
+    #   micr0s0ft.com
+    #
+    # The second case uses common digit substitutions such as:
+    #   0 -> o
+    #   1 -> i/l
+    #   3 -> e
+    #   4 -> a
+    #   5 -> s
+    #   7 -> t
+    #
+    # This prevents typosquatting/lookalike domains from being
+    # treated as safe simply because the exact brand string isn't
+    # present.
+
+    _generic_placeholder_domains = {
+        "example.com",
+        "example.org",
+        "example.net",
+        "wikipedia.org",
+    }
+
+    brand_names = [
+        trusted.split(".")[0]
+        for trusted in trusted_domains
+        if trusted not in _generic_placeholder_domains
+        and len(trusted.split(".")[0]) >= 4
+    ]
+
+    def _normalize_lookalike(value: str) -> str:
+        """
+        Normalize common digit substitutions used in phishing
+        lookalike domains.
+        """
+        translation = str.maketrans({
+            "0": "o",
+            "1": "i",
+            "3": "e",
+            "4": "a",
+            "5": "s",
+            "6": "g",
+            "7": "t",
+            "8": "b",
+            "9": "g",
+        })
+
+        return value.lower().translate(translation)
+
+    normalized_domain = _normalize_lookalike(domain)
+
+    impersonated_brand = None
+
+    for brand in brand_names:
+
+        normalized_brand = _normalize_lookalike(
+            brand
+        )
+
+        # Exact brand or obvious brand substring.
+        if brand in domain:
+            impersonated_brand = brand
+            break
+
+        # Detect digit-substitution lookalikes such as:
+        # micr0s0ft -> microsoft
+        if normalized_brand in normalized_domain:
+            impersonated_brand = brand
+            break
+
+    if impersonated_brand:
+        return {
+            "analyzed": True,
+            "is_url": True,
+            "domain": domain,
+            "risk_score": RISK_WEIGHTS.get(
+                "known_malicious_domain",
+                10,
+            ),
+            "classification": "high_risk",
+            "matches": [
+                "brand_impersonation"
+            ],
+            "reasons": [
+                f"The domain '{domain}' resembles the trusted "
+                f"{impersonated_brand} brand but is not the real "
+                f"{impersonated_brand} domain — a classic phishing "
+                "lookalike pattern."
+            ],
+            "content": content,
+        }
+
+    if impersonated_brand:
+
+        return {
+            "analyzed": True,
+            "is_url": True,
+            "domain": domain,
+            "risk_score": RISK_WEIGHTS.get(
+                "known_malicious_domain",
+                10,
+            ),
+            "classification": "high_risk",
+            "matches": ["brand_impersonation"],
+            "reasons": [
+                f"The domain contains '{impersonated_brand}' but is not "
+                f"the real {impersonated_brand} domain — a classic "
+                "phishing lookalike pattern."
+            ],
+            "content": content,
+        }
+
     # --------------------------------------------------------
     # Protocol
     # --------------------------------------------------------
@@ -640,7 +903,7 @@ def analyze_qr_content(qr_content: str) -> dict:
     keyword_matches = [
         keyword
         for keyword in suspicious_keywords
-        if keyword.lower() in lower_content
+        if _keyword_present(keyword, lower_content)
     ]
 
     if keyword_matches:
@@ -703,7 +966,7 @@ def analyze_qr_content(qr_content: str) -> dict:
     high_risk_matches = [
         keyword
         for keyword in high_risk_keywords
-        if keyword.lower() in lower_content
+        if _keyword_present(keyword, lower_content)
     ]
 
     if high_risk_matches:
@@ -749,20 +1012,18 @@ def analyze_qr_content(qr_content: str) -> dict:
 
         classification = "suspicious"
 
-    elif is_trusted_domain:
-
+    else:
+        # No risk signals detected (no HTTP, no IP address, no
+        # shortener, no suspicious keywords/patterns, reasonable
+        # length/subdomains) — treat as safe even though the domain
+        # isn't on the explicit trusted list. A hardcoded whitelist
+        # can never cover every legitimate merchant, so "no red flags"
+        # should mean Safe, not an automatic Verify First.
         classification = "safe"
 
         reasons.append(
-            "Domain matches the trusted-domain baseline."
-        )
-
-    else:
-
-        classification = "unknown"
-
-        reasons.append(
-            "The domain is not present in the trusted baseline."
+            "No risk indicators detected, though this domain is not "
+            "on the explicit trusted-domain list."
         )
 
     return {
@@ -941,8 +1202,47 @@ def determine_verdict(
             [],
         )
 
+        # CAMARA signals (SIM Swap, Number Verification, Device Status,
+        # Location Verification) are computed as supporting evidence.
+        # They can ESCALATE risk (e.g. a location mismatch on an
+        # otherwise-clean QR is a strong spoofing signal) but can never
+        # downgrade an already high-risk QR baseline verdict.
+        camara_signals = signal_data.get(
+            "camara_signals",
+            {},
+        )
+
+        camara_count = count_camara_red_flags(
+            camara_signals
+        )
+
+        location = camara_signals.get("location", {})
+        location_mismatch = location.get("match") is False
+
+        if camara_count > 0:
+
+            if location_mismatch:
+
+                red_flags.append(
+                    "The QR code's claimed merchant location does not "
+                    "match the actual device location."
+                )
+
+            if camara_count == 1:
+
+                red_flags.append(
+                    "One telecom verification signal requires attention."
+                )
+
+            elif camara_count >= 2:
+
+                red_flags.append(
+                    f"{camara_count} telecom verification signals "
+                    "require attention."
+                )
+
         # ----------------------------------------------------
-        # High-risk QR
+        # High-risk QR — CAMARA cannot downgrade this
         # ----------------------------------------------------
 
         if classification == "high_risk":
@@ -961,7 +1261,7 @@ def determine_verdict(
             return "Do Not Proceed", red_flags
 
         # ----------------------------------------------------
-        # Suspicious QR
+        # Suspicious QR — CAMARA can escalate to Do Not Proceed
         # ----------------------------------------------------
 
         if classification == "suspicious":
@@ -970,34 +1270,47 @@ def determine_verdict(
                 reasons[:3]
             )
 
+            if location_mismatch or camara_count >= 2:
+
+                return "Do Not Proceed", red_flags
+
             return "Verify First", red_flags
 
         # ----------------------------------------------------
-        # Known trusted QR
+        # Baseline-safe QR — CAMARA can still downgrade this,
+        # since a location mismatch on an otherwise-clean QR is
+        # exactly the spoofing scenario this feature exists to catch
         # ----------------------------------------------------
 
         if classification == "safe":
 
+            # Only a location mismatch justifies downgrading an
+            # otherwise-clean, trusted-domain QR — that's the specific
+            # spoofing scenario this branch exists to catch. Do NOT
+            # downgrade on camara_count alone: Number Verification is
+            # currently a random mock (see check_number_verification's
+            # docstring) with a ~15% false-flag rate, so treating any
+            # single red flag as disqualifying was intermittently
+            # downgrading genuinely safe QRs (e.g. paypal.com) to
+            # "Verify First" for no real reason.
+
+            if location_mismatch:
+
+                if camara_count >= 2:
+
+                    return "Do Not Proceed", red_flags
+
+                return "Verify First", red_flags
+
             red_flags.append(
-                "QR matches the trusted baseline."
+                "QR baseline and telecom signals both check out."
             )
 
             return "Safe", red_flags
 
         # ----------------------------------------------------
-        # Unknown QR
-        # ----------------------------------------------------
-
-        if classification == "unknown":
-
-            red_flags.append(
-                "QR does not match the trusted baseline."
-            )
-
-            return "Verify First", red_flags
-
-        # ----------------------------------------------------
-        # Fallback
+        # Fallback (unreachable under current analyze_qr_content
+        # logic, kept as a safety net)
         # ----------------------------------------------------
 
         return "Verify First", red_flags
@@ -1038,8 +1351,60 @@ def determine_verdict(
         )
 
     # --------------------------------------------------------
+    # Embedded URL red flags (links pasted inside the message)
+    # --------------------------------------------------------
+
+    url_analysis = signal_data.get(
+        "url_analysis",
+        [],
+    )
+
+    url_high_risk = [
+        u for u in url_analysis
+        if u.get("classification") == "high_risk"
+    ]
+
+    url_suspicious = [
+        u for u in url_analysis
+        if u.get("classification") == "suspicious"
+    ]
+
+    for u in url_high_risk:
+
+        red_flags.append(
+            "The link to "
+            f"{u.get('domain') or u.get('content')} "
+            "matches high-risk phishing indicators."
+        )
+
+    for u in url_suspicious:
+
+        red_flags.append(
+            "The link to "
+            f"{u.get('domain') or u.get('content')} "
+            "could not be verified as safe."
+        )
+
+    has_url_signal = bool(url_high_risk) or bool(url_suspicious)
+    has_text_signal = risk_score > 0
+
+    # A high-risk link on its own is enough — same as QR handling,
+    # CAMARA signals below can only escalate, never downgrade this.
+    if url_high_risk:
+
+        return "Do Not Proceed", red_flags
+
+    # --------------------------------------------------------
     # CAMARA signals
     # --------------------------------------------------------
+    #
+    # The mock CAMARA responses are per-phone-number telecom checks —
+    # they say nothing about what the message actually says. They must
+    # never be the SOLE reason a plain, benign message ("hello world",
+    # "are we still on for lunch?") gets flagged "Do Not Proceed" or
+    # even "Verify First". They only count once there's already some
+    # real signal in the message itself (a detected social-engineering
+    # tactic, or a risky/unverified link) for them to reinforce.
 
     camara_signals = signal_data.get(
         "camara_signals",
@@ -1050,7 +1415,9 @@ def determine_verdict(
         camara_signals
     )
 
-    if camara_count > 0:
+    camara_is_grounded = has_text_signal or has_url_signal
+
+    if camara_count > 0 and camara_is_grounded:
 
         if camara_count == 1:
 
@@ -1102,7 +1469,7 @@ def determine_verdict(
         return "Do Not Proceed", red_flags
 
     if credential_detected and (
-        camara_count >= 1
+        (camara_count >= 1 and camara_is_grounded)
         or risk_score >= 4
     ):
 
@@ -1112,7 +1479,14 @@ def determine_verdict(
 
         return "Do Not Proceed", red_flags
 
-    if camara_count >= 2:
+    if url_suspicious and (
+        risk_score >= 3
+        or (camara_count >= 2 and camara_is_grounded)
+    ):
+
+        return "Do Not Proceed", red_flags
+
+    if camara_count >= 2 and camara_is_grounded:
 
         return "Do Not Proceed", red_flags
 
@@ -1124,7 +1498,11 @@ def determine_verdict(
 
         return "Verify First", red_flags
 
-    if camara_count == 1:
+    if url_suspicious:
+
+        return "Verify First", red_flags
+
+    if camara_count >= 1 and camara_is_grounded:
 
         return "Verify First", red_flags
 
@@ -1257,41 +1635,34 @@ def generate_explanation(
         {},
     )
 
-    camara_signals = signal_data.get(
-        "camara_signals",
-        {},
-    )
+    # Safe is fully deterministic. This prevents an LLM from inventing
+    # telecom or other red flags when the classifier found none.
+    if verdict == "Safe":
+        return (
+            "✅ No significant risk indicators were detected. "
+            "The message appears safe based on the available signals."
+        )
 
     prompt = f"""
 You are the explanation agent for ScamShield AI.
 
-The system has already determined the final verdict.
-You MUST NOT change or contradict the verdict.
+The deterministic analysis has already produced the final verdict.
+You are ONLY allowed to explain the approved findings below.
 
 VERDICT:
 {verdict}
 
-RED FLAGS:
+APPROVED RED FLAGS:
 {red_flags}
 
-SOCIAL ENGINEERING ANALYSIS:
-{social_analysis}
-
-CAMARA SIGNALS:
-{camara_signals}
-
-USER MESSAGE:
-{signal_data.get("message_text", "")}
-
-Write a short, clear explanation for a normal Telegram user.
-
 Rules:
-- Do not change the verdict.
-- Do not claim certainty that the system does not have.
-- Mention the most important red flags.
+- Do not change or contradict the verdict.
+- Only mention facts explicitly contained in APPROVED RED FLAGS.
+- Do not infer additional facts from the original message or hidden data.
+- Never claim a SIM swap, location mismatch, device problem, or failed
+  number verification unless that exact finding appears in APPROVED RED FLAGS.
 - If the verdict is "Do Not Proceed", clearly tell the user not to continue.
-- If the verdict is "Verify First", tell the user what they should verify.
-- If the verdict is "Safe", explain that no significant red flags were detected.
+- If the verdict is "Verify First", tell the user to verify independently.
 - Do not mention CrewAI, agents, prompts, models, or internal implementation.
 - Keep the response under 80 words.
 """
@@ -1398,9 +1769,27 @@ def process(
 
     if input_type == "text":
 
-        social_analysis = analyze_social_engineering(
+        urls_found = _extract_urls(
             message_text
         )
+
+        text_without_urls = _strip_urls(
+            message_text,
+            urls_found,
+        )
+
+        social_analysis = analyze_social_engineering(
+            text_without_urls
+        )
+
+        # Run any pasted links through the same domain-trust /
+        # brand-impersonation / baseline logic used for QR codes,
+        # instead of letting words inside the URL leak into the
+        # narrative keyword scan above.
+        url_analysis = [
+            analyze_qr_content(url)
+            for url in urls_found
+        ]
 
         camara_signals = get_camara_signals(
             phone_number,
@@ -1411,6 +1800,7 @@ def process(
             "input_type": "text",
             "message_text": message_text,
             "social_analysis": social_analysis,
+            "url_analysis": url_analysis,
             "camara_signals": camara_signals,
         }
 

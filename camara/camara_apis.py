@@ -127,8 +127,13 @@ def check_number_verification(phone_number: str) -> dict:
     flow (see Nokia's "Consent and Identity Management" docs), then add
     "Authorization": f"Bearer {token}" to the headers below.
     """
-    import random
-    return {"verified": random.random() > 0.15}
+    return {
+        "verified": None,
+        "reason": (
+            "Number Verification unavailable: subscriber OAuth consent "
+            "token is not configured."
+        ),
+    }
 
 
 def check_device_status(phone_number: str) -> dict:
@@ -202,15 +207,39 @@ def _geocode_location(location_name: str) -> dict | None:
         return None
 
 
+import re as _re
+
+_DOMAIN_SHAPE = _re.compile(r"^[a-z0-9.-]+\.[a-z]{2,}$")
+
+
 def check_location(phone_number: str, claimed_location: str) -> dict:
+    # QR codes for plain URLs fall back to the bare domain as
+    # claimed_location (see qr_decoder.py's _extract_merchant_hint).
+    # A domain like "bit.ly" or "random-shop.net" is not a physical
+    # location claim, so don't geocode it at all — even a
+    # coincidental fuzzy match from the geocoder would produce a
+    # meaningless "location" to verify against. Treat this the same
+    # as "couldn't resolve": inconclusive, not a confirmed mismatch.
+    if claimed_location and _DOMAIN_SHAPE.match(claimed_location.strip().lower()):
+        return {
+            "match": None,
+            "claimed_location": claimed_location,
+            "actual_location": "Claimed location is a domain name, not a physical place — skipped.",
+        }
+
     coords = _geocode_location(claimed_location)
 
     if coords is None:
-        # Can't verify without coordinates — fail safe rather than sending a
-        # bad request to the API. Treat as a mismatch so the user is warned
-        # instead of getting a false "Safe".
+        # Can't verify — this is common and EXPECTED for QR codes, where
+        # claimed_location is often a domain name (e.g. "example.com"),
+        # not a real geocodable place. That's a data limitation, not
+        # evidence of fraud, so this returns match=None ("inconclusive")
+        # rather than match=False ("confirmed mismatch"). Both
+        # count_camara_red_flags() and determine_verdict() check
+        # `is False` specifically, so None correctly does NOT count as
+        # a red flag — only an actual confirmed mismatch does.
         return {
-            "match": False,
+            "match": None,
             "claimed_location": claimed_location,
             "actual_location": "Could not resolve claimed location",
         }
@@ -231,7 +260,19 @@ def check_location(phone_number: str, claimed_location: str) -> dict:
     resp.raise_for_status()
     data = resp.json()
     result = data.get("verificationResult")  # "TRUE" | "FALSE" | "PARTIAL" | "UNKNOWN"
-    match = result == "TRUE"
+
+    # Only an explicit "FALSE" is a confirmed mismatch. "PARTIAL" and
+    # "UNKNOWN" are inconclusive, same category as a geocoding failure
+    # above — they must map to match=None, not match=False, or an
+    # inconclusive result gets treated as confirmed fraud evidence by
+    # count_camara_red_flags()/determine_verdict() (both check
+    # `is False` specifically).
+    if result == "TRUE":
+        match = True
+    elif result == "FALSE":
+        match = False
+    else:
+        match = None
 
     if result == "PARTIAL":
         actual = f"Partial match (match_rate: {data.get('matchRate', 'n/a')})"
@@ -257,3 +298,4 @@ if __name__ == "__main__":
     print(check_number_verification("+99999991001"))
     print(check_device_status("+99999991001"))
     print(check_location("+99999991001", "Dubai, UAE"))
+

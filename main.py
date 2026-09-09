@@ -55,7 +55,11 @@ async def process_check(input_type: str, content: str) -> dict:
 
     if input_type == "text":
 
-        phone_number = _extract_phone(content) or "+000000000000"
+        # Fallback uses a real Nokia simulator test number rather than
+        # an all-zero placeholder, which isn't valid and would just
+        # 404 against the real sandbox — see the QR branch below for
+        # the same fix and full reasoning.
+        phone_number = _extract_phone(content) or "+99999991001"
 
         result = process(
             input_type="text",
@@ -97,10 +101,18 @@ async def process_check(input_type: str, content: str) -> dict:
             )
 
             # Demo note:
-            # A real merchant phone/device identifier would come
-            # from the decoded QR payment payload. Sandbox/demo
-            # QR codes may not contain a real number.
-            phone_number = "+000000000000"
+            # Real merchant/payment QR payloads sometimes embed a phone
+            # number (e.g. UPI-style "pa=" fields, contact QR codes).
+            # Try to extract one first; only fall back to a placeholder
+            # if the QR genuinely doesn't contain one.
+            #
+            # The fallback uses a real Nokia simulator test number
+            # (+99999991001, documented as the "safe" outcome number)
+            # rather than +000000000000 — an all-zero number isn't a
+            # valid simulator identifier and would just 404 against the
+            # real sandbox, making Location Verification silently
+            # meaningless for every demo QR that lacks an embedded number.
+            phone_number = _extract_phone(raw_qr_data) or "+99999991001"
 
             result = process(
                 input_type="qr",
