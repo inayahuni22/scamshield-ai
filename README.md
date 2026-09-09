@@ -354,8 +354,7 @@ Expected:
 ### Suspicious Input
 
 ```text
-URGENT! Your account will be suspended within 24 hours.
-Verify your account immediately.
+Your Microsoft account needs verification at microsoft-login.example.com
 ```
 
 Expected:
