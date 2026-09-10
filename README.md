@@ -210,17 +210,17 @@ This provides a foundation for future analytics, monitoring, and fraud-pattern a
 
 ## 🏗️ Technology Stack
 
-| Component            | Technology                     |
-| -------------------- | ------------------------------ |
-| Interface            | Telegram Bot                   |
-| Programming Language | Python                         |
-| AI / Agent Framework | CrewAI                         |
-| LLM                  | Groq                           |
-| Network Intelligence | Nokia Network-as-Code / CAMARA |
-|Image & QR Processing | OpenCV + Pyzbar                |
-| Database             | Supabase PostgreSQL            |
-| Environment          | Python Virtual Environment     |
-| Version Control      | Git / GitHub                   |
+| Component             | Technology                     |
+| --------------------- | ------------------------------ |
+| Interface             | Telegram Bot                   |
+| Programming Language  | Python                         |
+| AI / Agent Framework  | CrewAI                         |
+| LLM                   | Groq                           |
+| Network Intelligence  | Nokia Network-as-Code / CAMARA |
+| Image & QR Processing | OpenCV + Pyzbar                |
+| Database              | Supabase PostgreSQL            |
+| Environment           | Python Virtual Environment     |
+| Version Control       | Git / GitHub                   |
 
 ---
 
@@ -274,6 +274,10 @@ cd scamshield-ai
 
 ### 2. Create a virtual environment
 
+**ScamShield AI currently supports Python 3.12 and Python 3.13.**
+
+> **Important:** Python 3.14 and newer versions may not be compatible with some of the project's dependencies. Use **Python 3.12 or 3.13** to avoid dependency compatibility issues.
+
 Windows:
 
 ```powershell
@@ -287,6 +291,14 @@ Linux/macOS:
 python3 -m venv venv
 source venv/bin/activate
 ```
+
+You can verify your Python version with:
+
+```bash
+python --version
+```
+
+The version should be **Python 3.12.x** or **Python 3.13.x**.
 
 ### 3. Install dependencies
 
